@@ -1,33 +1,30 @@
 #!/bin/bash
-# docker-run.sh - 快速启动 Docker GPU 推理的辅助脚本
-# 用法:
-#   bash docker-run.sh build                     # 构建镜像
-#   bash docker-run.sh run <video_path>           # 运行提取
-#   bash docker-run.sh run <video_path> [options] # 带额外参数
-#   bash docker-run.sh shell                      # 进入容器 shell
-#   bash docker-run.sh gpu-check                  # 检查 GPU 是否可用
+# docker-run.sh - DGX Spark GPU inference helper
+# OCR engine: EasyOCR (PyTorch-based, ARM64 + NVIDIA GPU native support)
+#
+# Usage:
+#   bash docker-run.sh build                     # Build image
+#   bash docker-run.sh run <video_path>           # Run on local file
+#   bash docker-run.sh run-nas <video_path>       # Run on NAS file
+#   bash docker-run.sh shell                      # Interactive shell
+#   bash docker-run.sh gpu-check                  # Verify GPU
 
 IMAGE_NAME="video-sub-extrator:gpu"
 OUTPUT_DIR="$(pwd)/output"
-MODEL_CACHE="paddle_model_cache"
+MODEL_CACHE="easyocr_model_cache"
 
 mkdir -p "${OUTPUT_DIR}"
 
 case "$1" in
   build)
-    # Usage: bash docker-run.sh build [cuda_tag]
-    # Examples:
-    #   bash docker-run.sh build                                  # default: cuda12.3
-    #   bash docker-run.sh build 3.0.0-gpu-cuda12.6-cudnn9.5     # specify tag
-    PADDLE_TAG="${2:-3.3.0-gpu-cuda13.0-cudnn9.13}"
+    PYTORCH_TAG="${2:-2.7.0-cuda12.6-cudnn9-runtime}"
     echo "Building Docker image: ${IMAGE_NAME}"
-    echo "  Base image: paddlepaddle/paddle:${PADDLE_TAG}"
-    echo ""
-    echo "Tip: Run 'nvidia-smi' on DGX Spark to check your CUDA version."
-    echo "     Available tags: https://hub.docker.com/r/paddlepaddle/paddle/tags"
+    echo "  Base image: pytorch/pytorch:${PYTORCH_TAG}"
+    echo "  Architecture: ARM64 (DGX Spark / Grace CPU)"
+    echo "  OCR engine: EasyOCR (ARM64 + NVIDIA GPU)"
     echo ""
     docker build \
-      --build-arg PADDLE_TAG="${PADDLE_TAG}" \
+      --build-arg PYTORCH_TAG="${PYTORCH_TAG}" \
       -t "${IMAGE_NAME}" .
     echo ""
     echo "Build complete. Next steps:"
@@ -43,28 +40,22 @@ case "$1" in
     fi
     shift 2
     EXTRA_ARGS="$@"
-
-    # 判断是本地路径还是 NAS 路径
     VIDEO_DIR="$(dirname "${VIDEO_PATH}")"
     VIDEO_FILE="$(basename "${VIDEO_PATH}")"
-
-    echo "Running OCR on: ${VIDEO_PATH}"
-    echo "Extra args: ${EXTRA_ARGS}"
-
+    echo "Running OCR (GPU) on: ${VIDEO_PATH}"
     docker run --rm --gpus all \
-      -e PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True \
       -v "${VIDEO_DIR}:/input:ro" \
       -v "${OUTPUT_DIR}:/app/output" \
-      -v "${MODEL_CACHE}:/root/.paddlex" \
+      -v "${MODEL_CACHE}:/root/.EasyOCR" \
       "${IMAGE_NAME}" \
       --input "/input/${VIDEO_FILE}" \
       --output /app/output \
+      --backend easyocr \
       --use-gpu \
       ${EXTRA_ARGS}
     ;;
 
   run-nas)
-    # 专门用于 NAS 路径，直接挂载整个 /mnt/nas
     VIDEO_PATH="$2"
     if [ -z "${VIDEO_PATH}" ]; then
       echo "Usage: bash docker-run.sh run-nas /mnt/nas/Videos/xxx.mp4 [extra_args...]"
@@ -72,17 +63,15 @@ case "$1" in
     fi
     shift 2
     EXTRA_ARGS="$@"
-
-    echo "Running OCR on NAS file: ${VIDEO_PATH}"
-
+    echo "Running OCR (GPU) on NAS: ${VIDEO_PATH}"
     docker run --rm --gpus all \
-      -e PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True \
       -v /mnt/nas:/mnt/nas:ro \
       -v "${OUTPUT_DIR}:/app/output" \
-      -v "${MODEL_CACHE}:/root/.paddlex" \
+      -v "${MODEL_CACHE}:/root/.EasyOCR" \
       "${IMAGE_NAME}" \
       --input "${VIDEO_PATH}" \
       --output /app/output \
+      --backend easyocr \
       --use-gpu \
       ${EXTRA_ARGS}
     ;;
@@ -90,10 +79,9 @@ case "$1" in
   shell)
     echo "Opening interactive shell in container..."
     docker run --rm -it --gpus all \
-      -e PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True \
       -v /mnt/nas:/mnt/nas:ro \
       -v "${OUTPUT_DIR}:/app/output" \
-      -v "${MODEL_CACHE}:/root/.paddlex" \
+      -v "${MODEL_CACHE}:/root/.EasyOCR" \
       --entrypoint /bin/bash \
       "${IMAGE_NAME}"
     ;;
@@ -102,17 +90,15 @@ case "$1" in
     echo "Checking GPU availability inside Docker..."
     docker run --rm --gpus all \
       "${IMAGE_NAME}" python -c "
-import paddle
-print('PaddlePaddle version:', paddle.__version__)
-print('CUDA available:', paddle.is_compiled_with_cuda())
-if paddle.is_compiled_with_cuda():
-    print('GPU count:', paddle.device.cuda.device_count())
-    print('GPU name:', paddle.device.cuda.get_device_name(0))
-" 2>/dev/null || docker run --rm "${IMAGE_NAME}" python -c "
-import paddle
-print('PaddlePaddle version:', paddle.__version__)
-print('CUDA available:', paddle.is_compiled_with_cuda())
-print('WARNING: No GPU detected, --gpus flag may not be working')
+import torch
+print('PyTorch version:', torch.__version__)
+print('CUDA available:', torch.cuda.is_available())
+if torch.cuda.is_available():
+    print('GPU count:', torch.cuda.device_count())
+    for i in range(torch.cuda.device_count()):
+        print(f'  GPU {i}:', torch.cuda.get_device_name(i))
+else:
+    print('WARNING: CUDA not available. Check nvidia-container-toolkit.')
 "
     ;;
 

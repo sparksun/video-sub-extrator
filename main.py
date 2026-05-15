@@ -88,6 +88,12 @@ def load_config(config_path: str = "config.yaml") -> dict:
     help="是否使用 GPU 加速（默认: 否）",
 )
 @click.option(
+    "--backend",
+    default=None,
+    type=click.Choice(["easyocr", "paddleocr"], case_sensitive=False),
+    help="OCR 引擎后端（默认: easyocr）。DGX Spark 用 easyocr，macOS 用 paddleocr",
+)
+@click.option(
     "--include-timestamp/--no-timestamp",
     default=True,
     help="输出文件中是否包含时间戳（默认: 是）",
@@ -108,6 +114,7 @@ def main(
     merge_threshold,
     lang,
     use_gpu,
+    backend,
     include_timestamp,
     config,
 ):
@@ -131,8 +138,9 @@ def main(
     _fps          = fps             or ext_cfg.get("fps", 1.0)
     _region       = subtitle_region or ext_cfg.get("subtitle_region", "bottom20")
     _scale        = ext_cfg.get("scale_factor", 2.0)
-    _lang         = lang            or ocr_cfg.get("lang", "japan")
+    _lang         = lang            or None  # None 让 OCREngine 按 backend 自动选择
     _use_gpu      = use_gpu         if use_gpu is not None else ocr_cfg.get("use_gpu", False)
+    _backend      = backend         or ocr_cfg.get("backend", "easyocr")
     _confidence   = confidence      or ocr_cfg.get("confidence_threshold", 0.7)
     _merge_thr    = merge_threshold or post_cfg.get("merge_threshold", 0.85)
     _min_len      = post_cfg.get("min_text_length", 1)
@@ -149,9 +157,9 @@ def main(
     click.echo(f"  输出格式: {', '.join(_formats)}")
     click.echo(f"  采样帧率: {_fps} 帧/秒")
     click.echo(f"  字幕区域: {_region}")
-    click.echo(f"  OCR 语言: {_lang}")
+    click.echo(f"  OCR 引擎: {_backend}")
     click.echo(f"  GPU 加速: {'是' if _use_gpu else '否'}")
-    click.echo(f"  置信度阈值: {_confidence}")
+    click.echo(f"  置信度阈値: {_confidence}")
     click.echo("─" * 50)
     click.echo("")
 
@@ -163,9 +171,10 @@ def main(
     from src.output_formatter import OutputFormatter
 
     # ─── 初始化各模块 ──────────────────────────────────────────────────────────
-    extractor   = FrameExtractor(video_path=input, fps=_fps)
+    extractor    = FrameExtractor(video_path=input, fps=_fps)
     preprocessor = ImagePreprocessor(subtitle_region=_region, scale_factor=_scale)
-    ocr_engine  = OCREngine(
+    ocr_engine   = OCREngine(
+        backend=_backend,
         lang=_lang,
         use_gpu=_use_gpu,
         confidence_threshold=_confidence,

@@ -1,14 +1,13 @@
 """
 模块 3: OCR 识别引擎 (OCREngine)
 
-封装 PaddleOCR v3，对预处理后的字幕图像进行日文文字识别。
-返回带时间戳、文本和置信度的识别结果。
+支持两种 OCR 后端，根据运行环境自动选择或手动指定：
+  - easyocr  (默认): 基于 PyTorch，支持 ARM64 + NVIDIA GPU，推荐用于 DGX Spark
+  - paddleocr:        基于 PaddlePaddle，仅 x86_64 有 GPU 支持，适合 macOS CPU 推理
 
-PaddleOCR v3 API 变化（与 v2 对比）：
-  - use_gpu=True  →  device='gpu' / device='cpu'
-  - use_angle_cls →  use_textline_orientation
-  - show_log      →  已移除
-  - ocr() 返回值  →  生成器，每个元素是 OCRResult 对象，需用 .boxes/.rec_texts/.rec_scores 访问
+用法:
+  OCREngine(backend='easyocr', use_gpu=True)   # DGX Spark GPU
+  OCREngine(backend='paddleocr', use_gpu=False) # macOS CPU
 """
 
 import numpy as np
@@ -19,59 +18,90 @@ from typing import List, Optional
 @dataclass
 class OCRResult:
     """单帧 OCR 识别结果。"""
-    timestamp_ms: int          # 帧时间戳（毫秒）
-    text: str                  # 识别出的文本（多行合并）
-    confidence: float          # 平均置信度
-    raw_lines: List[str] = field(default_factory=list)  # 原始识别行列表
+    timestamp_ms: int
+    text: str
+    confidence: float
+    raw_lines: List[str] = field(default_factory=list)
 
 
 class OCREngine:
     """
-    PaddleOCR v3 日文识别引擎封装。
+    多后端 OCR 引擎封装，统一接口。
 
     Args:
-        lang: OCR 语言代码。日文使用 'japan'。
-        use_gpu: 是否使用 GPU 加速。v3 中对应 device='gpu'。
-        use_textline_orientation: 是否启用方向分类（支持竖排文字）。
-        confidence_threshold: 置信度阈值，低于此值的结果将被丢弃。
+        backend:    'easyocr' (推荐 DGX Spark) 或 'paddleocr' (推荐 macOS)
+        lang:       语言代码。easyocr 用 'ja'，paddleocr 用 'japan'
+        use_gpu:    是否使用 GPU 加速
+        confidence_threshold: 置信度过滤阈值
     """
+
+    BACKEND_EASYOCR = "easyocr"
+    BACKEND_PADDLE = "paddleocr"
 
     def __init__(
         self,
-        lang: str = "japan",
+        backend: str = "easyocr",
+        lang: str = None,
         use_gpu: bool = False,
-        use_textline_orientation: bool = True,
         confidence_threshold: float = 0.7,
     ):
-        self.lang = lang
-        self.device = "gpu" if use_gpu else "cpu"
-        self.use_textline_orientation = use_textline_orientation
+        self.backend = backend.lower()
+        self.use_gpu = use_gpu
         self.confidence_threshold = confidence_threshold
-        self._ocr = None  # 延迟初始化（首次调用时加载模型）
+        self._engine = None
 
-    def _get_ocr(self):
-        """延迟初始化 PaddleOCR（首次调用时下载并加载模型）。"""
-        if self._ocr is None:
-            try:
-                from paddleocr import PaddleOCR
-            except ImportError:
-                raise ImportError(
-                    "PaddleOCR 未安装。请运行: pip install paddleocr paddlepaddle"
-                )
-            # PaddleOCR v3 新 API
-            self._ocr = PaddleOCR(
-                lang=self.lang,
-                device=self.device,
-                use_textline_orientation=self.use_textline_orientation,
-                text_rec_score_thresh=self.confidence_threshold,
-            )
-        return self._ocr
+        # 语言代码按后端规范自动映射
+        if lang is None:
+            self.lang = "ja" if self.backend == self.BACKEND_EASYOCR else "japan"
+        else:
+            self.lang = lang
 
-    def recognize(
-        self,
-        image: np.ndarray,
-        timestamp_ms: int,
-    ) -> Optional[OCRResult]:
+    def _get_engine(self):
+        """延迟初始化 OCR 引擎（首次调用时加载模型）。"""
+        if self._engine is not None:
+            return self._engine
+
+        if self.backend == self.BACKEND_EASYOCR:
+            self._engine = self._init_easyocr()
+        elif self.backend == self.BACKEND_PADDLE:
+            self._engine = self._init_paddleocr()
+        else:
+            raise ValueError(f"Unknown backend: {self.backend}. Use 'easyocr' or 'paddleocr'.")
+
+        return self._engine
+
+    def _init_easyocr(self):
+        """初始化 EasyOCR（支持 ARM64 + NVIDIA GPU）。"""
+        try:
+            import easyocr
+        except ImportError:
+            raise ImportError("EasyOCR 未安装。请运行: pip install easyocr")
+
+        print(f"[OCR] Loading EasyOCR (lang={self.lang}, gpu={self.use_gpu})...")
+        reader = easyocr.Reader(
+            [self.lang],
+            gpu=self.use_gpu,
+            verbose=False,
+        )
+        return ("easyocr", reader)
+
+    def _init_paddleocr(self):
+        """初始化 PaddleOCR v3（支持 x86_64，macOS CPU 推理）。"""
+        try:
+            from paddleocr import PaddleOCR
+        except ImportError:
+            raise ImportError("PaddleOCR 未安装。请运行: pip install paddleocr paddlepaddle")
+
+        print(f"[OCR] Loading PaddleOCR (lang={self.lang}, device={'gpu' if self.use_gpu else 'cpu'})...")
+        ocr = PaddleOCR(
+            lang=self.lang,
+            device="gpu" if self.use_gpu else "cpu",
+            use_textline_orientation=True,
+            text_rec_score_thresh=self.confidence_threshold,
+        )
+        return ("paddleocr", ocr)
+
+    def recognize(self, image: np.ndarray, timestamp_ms: int) -> Optional[OCRResult]:
         """
         对单帧图像执行 OCR 识别。
 
@@ -80,14 +110,42 @@ class OCREngine:
             timestamp_ms: 帧时间戳（毫秒）
 
         Returns:
-            OCRResult 或 None（如果未识别出任何文本）
+            OCRResult 或 None
         """
-        ocr = self._get_ocr()
+        backend_name, engine = self._get_engine()
 
-        # PaddleOCR v3: ocr() 返回生成器，每次 predict 一张图
-        # 结果是 OCRResult 对象，包含 .rec_texts, .rec_scores, .boxes 属性
+        if backend_name == "easyocr":
+            return self._recognize_easyocr(engine, image, timestamp_ms)
+        else:
+            return self._recognize_paddleocr(engine, image, timestamp_ms)
+
+    def _recognize_easyocr(self, reader, image: np.ndarray, timestamp_ms: int) -> Optional[OCRResult]:
+        """EasyOCR 识别逻辑。"""
+        # EasyOCR 接受 BGR (OpenCV) 或 RGB，这里直接传入
+        results = reader.readtext(image)
+        # results: [(bbox, text, confidence), ...]
+
+        lines = []
+        confidences = []
+        for (_, text, conf) in results:
+            text = text.strip()
+            if conf >= self.confidence_threshold and text:
+                lines.append(text)
+                confidences.append(conf)
+
+        if not lines:
+            return None
+
+        return OCRResult(
+            timestamp_ms=timestamp_ms,
+            text=" ".join(lines),
+            confidence=sum(confidences) / len(confidences),
+            raw_lines=lines,
+        )
+
+    def _recognize_paddleocr(self, ocr, image: np.ndarray, timestamp_ms: int) -> Optional[OCRResult]:
+        """PaddleOCR v3 识别逻辑。"""
         results = list(ocr.ocr(image))
-
         if not results:
             return None
 
@@ -95,17 +153,13 @@ class OCREngine:
         confidences = []
 
         for result in results:
-            # result 是单张图的 OCRResult 对象
             if result is None:
                 continue
-
-            # v3 API: rec_texts / rec_scores
             rec_texts = getattr(result, "rec_texts", None)
             rec_scores = getattr(result, "rec_scores", None)
 
-            # 兼容旧式列表格式 [[bbox, (text, score)], ...]
             if rec_texts is None:
-                # 尝试旧格式（如果有混合安装）
+                # 兼容旧格式
                 if isinstance(result, list):
                     for line in result:
                         if line is None:
@@ -115,10 +169,6 @@ class OCREngine:
                         if score >= self.confidence_threshold and text:
                             lines.append(text)
                             confidences.append(score)
-                continue
-
-            # 正常 v3 格式
-            if rec_texts is None or rec_scores is None:
                 continue
 
             for text, score in zip(rec_texts, rec_scores):
@@ -131,29 +181,14 @@ class OCREngine:
         if not lines:
             return None
 
-        combined_text = " ".join(lines)
-        avg_confidence = sum(confidences) / len(confidences)
-
         return OCRResult(
             timestamp_ms=timestamp_ms,
-            text=combined_text,
-            confidence=avg_confidence,
+            text=" ".join(lines),
+            confidence=sum(confidences) / len(confidences),
             raw_lines=lines,
         )
 
-    def recognize_batch(
-        self,
-        frames: List[tuple],  # List[(timestamp_ms, np.ndarray)]
-    ) -> List[OCRResult]:
-        """
-        批量识别多帧。
-
-        Args:
-            frames: [(timestamp_ms, image), ...] 列表
-
-        Returns:
-            识别出文本的 OCRResult 列表（空帧不包含）
-        """
+    def recognize_batch(self, frames: List[tuple]) -> List[OCRResult]:
         results = []
         for timestamp_ms, image in frames:
             result = self.recognize(image, timestamp_ms)

@@ -1,0 +1,9 @@
+# Docker 版依赖（PyTorch 由基础镜像提供，使用 EasyOCR 作为 OCR 引擎）
+easyocr>=1.7.0
+opencv-python-headless>=4.8.0
+numpy>=1.24.0
+Pillow>=10.0.0
+click>=8.1.0
+PyYAML>=6.0
+tqdm>=4.65.0
+ffmpeg-python>=0.2.0
