@@ -1,0 +1,9 @@
+# GPU 版依赖（不包含 paddlepaddle，由 Docker 基础镜像提供）
+paddleocr>=2.7.0
+opencv-python-headless>=4.8.0   # headless 版本适合服务器/Docker 环境（无需 X11）
+numpy>=1.24.0
+Pillow>=10.0.0
+click>=8.1.0
+PyYAML>=6.0
+tqdm>=4.65.0
+ffmpeg-python>=0.2.0

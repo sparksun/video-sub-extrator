@@ -1,0 +1,38 @@
+services:
+  video-sub-extrator:
+    image: video-sub-extrator:gpu
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # GPU 直通：将所有 NVIDIA GPU 暴露给容器
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # 或者使用旧版写法（兼容性更好）:
+    # runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # 挂载 NAS 视频目录（只读）
+      - /mnt/nas/Videos:/mnt/nas/Videos:ro
+      # 挂载输出目录（读写）
+      - ./output:/app/output
+      # 挂载本地视频目录（读写，用于测试）
+      - ./videos:/app/videos
+      # 缓存 PaddleOCR 模型，避免重复下载
+      - paddle_model_cache:/root/.paddlex
+    # 启动时保持容器运行（用于 exec 交互）
+    stdin_open: true
+    tty: true
+    # 默认命令：显示帮助
+    command: ["--help"]
+
+volumes:
+  paddle_model_cache:
+    name: paddle_model_cache

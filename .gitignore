@@ -9,6 +9,9 @@ dist/
 build/
 .eggs/
 
+# Docker
+.dockerignore
+
 # Virtual Environment
 venv/
 .venv/
