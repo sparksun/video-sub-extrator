@@ -1,0 +1,23 @@
+# 日文视频硬字幕提取工具 — 默认配置
+# 可通过 CLI 参数覆盖所有配置项
+
+ocr:
+  lang: japan              # OCR 识别语言: japan / ch / en
+  use_gpu: false           # 是否使用 GPU 加速
+  use_angle_cls: true      # 是否自动纠正文字方向（支持竖排）
+  confidence_threshold: 0.7 # 置信度阈值，低于此值的识别结果将被丢弃
+
+extraction:
+  fps: 1.0                 # 视频采样帧率（帧/秒）
+  subtitle_region: bottom20 # 字幕区域: bottom10 / bottom20 / bottom30 / full
+  scale_factor: 2.0        # 图像放大倍数（提升小字识别率）
+
+postprocess:
+  merge_threshold: 0.85    # 相邻字幕合并相似度阈值
+  min_text_length: 1       # 最短字幕长度（字符数），过短的结果将被丢弃
+
+output:
+  format: [md, txt]        # 输出格式列表
+  output_dir: output       # 输出目录
+  include_timestamp: true  # 是否在输出中包含时间戳
+  timestamp_format: "[HH:MM:SS]" # 时间戳格式
