@@ -1,4 +1,4 @@
-paddlepaddle>=2.6.0
+paddlepaddle>=3.0.0      # PaddlePaddle 3.x (required by PaddleOCR 3.x)
 paddleocr>=2.7.0
 opencv-python>=4.8.0
 ffmpeg-python>=0.2.0

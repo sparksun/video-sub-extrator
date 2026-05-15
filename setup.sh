@@ -61,9 +61,8 @@ pip_install \
 echo ""
 
 # Step 4: Install PaddlePaddle CPU (macOS / Apple Silicon)
-echo "[4/5] Installing PaddlePaddle CPU..."
-pip_install paddlepaddle==2.6.2 \
-    -f https://www.paddlepaddle.org.cn/whl/mac/cpu/stable.html
+echo "[4/5] Installing PaddlePaddle CPU (v3.x required by PaddleOCR 3.x)..."
+pip_install "paddlepaddle>=3.0.0"
 echo ""
 
 # Step 5: Install PaddleOCR
