@@ -17,20 +17,17 @@ mkdir -p "${OUTPUT_DIR}"
 
 case "$1" in
   build)
-    PYTORCH_TAG="${2:-2.7.0-cuda12.6-cudnn9-runtime}"
     echo "Building Docker image: ${IMAGE_NAME}"
-    echo "  Base image: pytorch/pytorch:${PYTORCH_TAG}"
-    echo "  Architecture: ARM64 (DGX Spark / Grace CPU)"
+    echo "  Base: nvcr.io/nvidia/pytorch:26.04-py3 (NVIDIA NGC, DGX Spark optimized)"
     echo "  OCR engine: EasyOCR (ARM64 + NVIDIA GPU)"
     echo ""
-    docker build \
-      --build-arg PYTORCH_TAG="${PYTORCH_TAG}" \
-      -t "${IMAGE_NAME}" .
+    docker build -t "${IMAGE_NAME}" .
     echo ""
     echo "Build complete. Next steps:"
     echo "  bash docker-run.sh gpu-check"
     echo "  bash docker-run.sh run-nas /mnt/nas/Videos/xxx.mp4"
     ;;
+
 
   run)
     VIDEO_PATH="$2"

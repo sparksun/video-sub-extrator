@@ -1,16 +1,13 @@
-# Dockerfile for DGX Spark (ARM64 / aarch64 + NVIDIA GPU)
+# Dockerfile for DGX Spark (ARM64 + NVIDIA GPU)
 #
-# Uses PyTorch official ARM64 CUDA image as base.
-# EasyOCR (PyTorch-based) supports ARM64 + NVIDIA GPU natively.
+# Base: NVIDIA NGC PyTorch container, optimized for DGX hardware (Grace Blackwell / ARM64)
+# Includes: CUDA 13.0, cuDNN 9, TensorRT, PyTorch - pre-tuned for DGX Spark
+# NGC catalog: https://catalog.ngc.nvidia.com/orgs/nvidia/containers/pytorch
 #
-# Check CUDA version: nvidia-smi | grep "CUDA Version"
-# DGX Spark CUDA 13.0 → use PyTorch with CUDA 12.6 (forward compatible)
-#
-ARG PYTORCH_TAG=2.7.0-cuda12.6-cudnn9-runtime
-FROM pytorch/pytorch:${PYTORCH_TAG}
+FROM nvcr.io/nvidia/pytorch:26.04-py3
 
 LABEL maintainer="video-sub-extrator"
-LABEL description="Japanese video hard subtitle extractor (GPU, ARM64)"
+LABEL description="Japanese video hard subtitle extractor - DGX Spark GPU"
 
 WORKDIR /app
 
@@ -25,9 +22,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-# pytorch/pytorch base image already includes torch + CUDA
-# easyocr uses torch for GPU inference on ARM64
+# Python dependencies
+# torch/torchvision already provided by NGC base image
 COPY requirements-docker.txt .
 RUN pip install --no-cache-dir -r requirements-docker.txt \
     -i https://mirrors.aliyun.com/pypi/simple/ \
@@ -37,7 +33,6 @@ RUN pip install --no-cache-dir -r requirements-docker.txt \
 COPY src/ ./src/
 COPY main.py config.yaml ./
 
-# Create I/O directories
 RUN mkdir -p /app/output /app/videos
 
 # Pre-download EasyOCR Japanese model at build time
@@ -45,7 +40,7 @@ RUN python -c "\
 import easyocr; \
 print('Pre-loading EasyOCR Japanese model...'); \
 reader = easyocr.Reader(['ja'], gpu=False, verbose=False); \
-print('EasyOCR model cached.')" || echo "Model pre-download skipped"
+print('EasyOCR model cached.')" || echo "Model pre-download skipped (will download at first run)"
 
 ENV PYTHONUNBUFFERED=1
 
