@@ -77,9 +77,11 @@ class OCREngine:
         except ImportError:
             raise ImportError("EasyOCR 未安装。请运行: pip install easyocr")
 
-        print(f"[OCR] Loading EasyOCR (lang={self.lang}, gpu={self.use_gpu})...")
+        # 日文识别必须同时加载 'en'，否则数字/标点识别率极低
+        langs = [self.lang, "en"] if self.lang != "en" else ["en"]
+        print(f"[OCR] Loading EasyOCR (langs={langs}, gpu={self.use_gpu})...")
         reader = easyocr.Reader(
-            [self.lang],
+            langs,
             gpu=self.use_gpu,
             verbose=False,
         )
@@ -121,17 +123,25 @@ class OCREngine:
 
     def _recognize_easyocr(self, reader, image: np.ndarray, timestamp_ms: int) -> Optional[OCRResult]:
         """EasyOCR 识别逻辑。"""
-        # EasyOCR 接受 BGR (OpenCV) 或 RGB，这里直接传入
-        results = reader.readtext(image)
+        import cv2
+        # EasyOCR 需要 RGB 格式，OpenCV 默认是 BGR
+        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        results = reader.readtext(rgb)
         # results: [(bbox, text, confidence), ...]
 
         lines = []
         confidences = []
         for (_, text, conf) in results:
             text = text.strip()
-            if conf >= self.confidence_threshold and text:
-                lines.append(text)
-                confidences.append(conf)
+            if text:
+                if conf >= self.confidence_threshold:
+                    lines.append(text)
+                    confidences.append(conf)
+
+        # 诊断日志：当原始结果非空但全被阈值过滤时打印一次
+        if results and not lines:
+            raw = [(t, f"{c:.2f}") for _, t, c in results]
+            print(f"[OCR DEBUG] t={timestamp_ms}ms: {len(results)} detections filtered by threshold={self.confidence_threshold}: {raw[:3]}")
 
         if not lines:
             return None
