@@ -15,9 +15,24 @@ mkdir -p "${OUTPUT_DIR}"
 
 case "$1" in
   build)
+    # Usage: bash docker-run.sh build [cuda_tag]
+    # Examples:
+    #   bash docker-run.sh build                                  # default: cuda12.3
+    #   bash docker-run.sh build 3.0.0-gpu-cuda12.6-cudnn9.5     # specify tag
+    PADDLE_TAG="${2:-3.0.0-gpu-cuda12.3-cudnn9.0-trt8.6}"
     echo "Building Docker image: ${IMAGE_NAME}"
-    docker build -t "${IMAGE_NAME}" .
-    echo "Done. Run: bash docker-run.sh run <video_path>"
+    echo "  Base image: paddlepaddle/paddle:${PADDLE_TAG}"
+    echo ""
+    echo "Tip: Run 'nvidia-smi' on DGX Spark to check your CUDA version."
+    echo "     Available tags: https://hub.docker.com/r/paddlepaddle/paddle/tags"
+    echo ""
+    docker build \
+      --build-arg PADDLE_TAG="${PADDLE_TAG}" \
+      -t "${IMAGE_NAME}" .
+    echo ""
+    echo "Build complete. Next steps:"
+    echo "  bash docker-run.sh gpu-check"
+    echo "  bash docker-run.sh run-nas /mnt/nas/Videos/xxx.mp4"
     ;;
 
   run)

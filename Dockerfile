@@ -1,59 +1,51 @@
 # Dockerfile
-# 基于 PaddlePaddle 官方 GPU 镜像（CUDA 12.3 + cuDNN 9）
-# 适配 DGX Spark (NVIDIA GPU)
-FROM registry.baidubce.com/paddlepaddle/paddle:3.0.0-gpu-cuda12.3-cudnn9.0-trt8.6
+# PaddlePaddle official GPU image from Docker Hub
+# Use CUDA 12.6 + cuDNN 9.5 (compatible with DGX Spark / modern NVIDIA GPUs)
+# Check your CUDA version with: nvidia-smi
+# Available tags: https://hub.docker.com/r/paddlepaddle/paddle/tags
+ARG PADDLE_TAG=3.0.0-gpu-cuda12.3-cudnn9.0-trt8.6
+FROM paddlepaddle/paddle:${PADDLE_TAG}
 
 LABEL maintainer="video-sub-extrator"
-LABEL description="日文视频硬字幕提取工具 (GPU 版)"
+LABEL description="Japanese video hard subtitle extractor (GPU)"
 
-# 设置工作目录
 WORKDIR /app
 
-# 安装系统依赖（FFmpeg、字体等）
+# System dependencies: FFmpeg, OpenCV runtime libs, CJK fonts
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
-    libxrender-dev \
+    libxrender1 \
     fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
-# 复制依赖文件
+# Install Python dependencies
+# paddlepaddle-gpu is already provided by the base image — skip it here
 COPY requirements-gpu.txt .
-
-# 安装 Python 依赖（跳过 paddlepaddle，镜像已内置 GPU 版）
-RUN pip install --no-cache-dir \
-    "opencv-python-headless>=4.8.0" \
-    "numpy>=1.24.0" \
-    "Pillow>=10.0.0" \
-    "click>=8.1.0" \
-    "PyYAML>=6.0" \
-    "tqdm>=4.65.0" \
-    "ffmpeg-python>=0.2.0" \
-    "paddleocr>=2.7.0" \
+RUN pip install --no-cache-dir -r requirements-gpu.txt \
     -i https://mirrors.aliyun.com/pypi/simple/ \
     --trusted-host mirrors.aliyun.com
 
-# 复制项目代码
+# Copy source code
 COPY src/ ./src/
 COPY main.py config.yaml ./
 
-# 创建输出目录
+# Create I/O directories
 RUN mkdir -p /app/output /app/videos
 
-# 预下载 PaddleOCR 日文模型（构建时缓存，避免运行时下载）
+# Pre-download PaddleOCR Japanese models at build time
+# (cached in image layer → no download delay at runtime)
 RUN PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True python -c "\
 from paddleocr import PaddleOCR; \
-print('Pre-downloading Japanese OCR models...'); \
+print('Pre-loading Japanese OCR models...'); \
 ocr = PaddleOCR(lang='japan', device='cpu', use_textline_orientation=True, text_rec_score_thresh=0.3); \
-print('Models ready.')" || true
+print('Models cached successfully.')" || echo "Model pre-download skipped (will download at first run)"
 
-# 设置环境变量
 ENV PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
 ENV PYTHONUNBUFFERED=1
 
-# 默认入口
 ENTRYPOINT ["python", "main.py"]
 CMD ["--help"]
