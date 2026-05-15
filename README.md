@@ -70,15 +70,35 @@ bash docker-run.sh gpu-check
 ### 3. 处理视频
 
 ```bash
-# NAS 视频
+# NAS 视频（生产模式，使用镜像内代码）
 bash docker-run.sh run-nas /mnt/nas/Videos/xxx.mp4
 
-# 本地视频
+# 本地视频（生产模式）
 bash docker-run.sh run /path/to/video.mp4
+
+# 避开角落台标/水印（指定精确字幕矩形）
+bash docker-run.sh run-nas /mnt/nas/Videos/xxx.mp4 --subtitle-bbox "0.1,0.80,0.9,1.0"
 
 # 进入容器调试
 bash docker-run.sh shell
 ```
+
+### 4. 开发模式（修改代码后无需重新 build）
+
+`dev` / `dev-nas` 命令会将宿主机的 `src/`、`main.py`、`config.yaml` 实时挂载进容器，代码改动即时生效：
+
+```bash
+# 本地视频（开发模式）
+bash docker-run.sh dev test_japanese.mp4 --subtitle-bbox "0.1,0.80,0.9,1.0"
+
+# NAS 视频（开发模式）
+bash docker-run.sh dev-nas /mnt/nas/Videos/xxx.mp4 --subtitle-region bottom30
+```
+
+| 命令 | 代码来源 | 适用场景 |
+|------|----------|----------|
+| `run` / `run-nas` | 镜像内（baked-in） | 生产/稳定部署 |
+| `dev` / `dev-nas` | 宿主机实时挂载 | 开发调试，改完代码直接跑 |
 
 ---
 
