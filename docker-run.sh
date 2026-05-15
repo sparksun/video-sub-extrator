@@ -19,7 +19,7 @@ case "$1" in
     # Examples:
     #   bash docker-run.sh build                                  # default: cuda12.3
     #   bash docker-run.sh build 3.0.0-gpu-cuda12.6-cudnn9.5     # specify tag
-    PADDLE_TAG="${2:-3.0.0-gpu-cuda12.3-cudnn9.0-trt8.6}"
+    PADDLE_TAG="${2:-3.3.0-gpu-cuda13.0-cudnn9.13}"
     echo "Building Docker image: ${IMAGE_NAME}"
     echo "  Base image: paddlepaddle/paddle:${PADDLE_TAG}"
     echo ""

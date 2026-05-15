@@ -3,7 +3,7 @@
 # Use CUDA 12.6 + cuDNN 9.5 (compatible with DGX Spark / modern NVIDIA GPUs)
 # Check your CUDA version with: nvidia-smi
 # Available tags: https://hub.docker.com/r/paddlepaddle/paddle/tags
-ARG PADDLE_TAG=3.0.0-gpu-cuda12.3-cudnn9.0-trt8.6
+ARG PADDLE_TAG=3.3.0-gpu-cuda13.0-cudnn9.13
 FROM paddlepaddle/paddle:${PADDLE_TAG}
 
 LABEL maintainer="video-sub-extrator"
