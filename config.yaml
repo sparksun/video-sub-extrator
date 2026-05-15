@@ -2,10 +2,10 @@
 # 可通过 CLI 参数覆盖所有配置项
 
 ocr:
-  lang: japan              # OCR 识别语言: japan / ch / en
-  use_gpu: false           # 是否使用 GPU 加速
-  use_angle_cls: true      # 是否自动纠正文字方向（支持竖排）
-  confidence_threshold: 0.7 # 置信度阈值，低于此值的识别结果将被丢弃
+  backend: paddleocr          # OCR 引擎: paddleocr (macOS/CPU) | easyocr (DGX Spark/GPU)
+  lang: japan                 # OCR 识别语言: japan / ch / en (paddleocr) | ja / ch_sim (easyocr)
+  use_gpu: false              # 是否使用 GPU 加速
+  confidence_threshold: 0.7  # 置信度阈值，低于此值的识别结果将被丢弃
 
 extraction:
   fps: 1.0                 # 视频采样帧率（帧/秒）

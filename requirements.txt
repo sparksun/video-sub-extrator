@@ -1,5 +1,14 @@
-paddlepaddle>=3.0.0      # PaddlePaddle 3.x (required by PaddleOCR 3.x)
+# macOS 本地开发依赖（使用 PaddleOCR 引擎）
+# 安装方式: bash setup.sh  (推荐)  或  pip install -r requirements.txt
+
+# OCR 引擎：PaddleOCR（macOS CPU，x86_64 / Apple Silicon）
+paddlepaddle>=3.0.0     # PaddlePaddle 3.x（PaddleOCR 3.x 要求）
 paddleocr>=2.7.0
+
+# 可选：EasyOCR（如需在 macOS 上测试 easyocr backend）
+# pip install easyocr
+
+# 基础依赖
 opencv-python>=4.8.0
 ffmpeg-python>=0.2.0
 numpy>=1.24.0
