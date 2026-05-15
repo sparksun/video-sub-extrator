@@ -50,6 +50,8 @@ case "$1" in
       --backend easyocr \
       --use-gpu \
       ${EXTRA_ARGS}
+    echo ""
+    echo "📂 输出文件保存到宿主机: ${OUTPUT_DIR}/"
     ;;
 
   run-nas)
@@ -71,6 +73,8 @@ case "$1" in
       --backend easyocr \
       --use-gpu \
       ${EXTRA_ARGS}
+    echo ""
+    echo "📂 输出文件保存到宿主机: ${OUTPUT_DIR}/"
     ;;
 
   shell)

@@ -98,7 +98,8 @@ python main.py --input <视频路径> [选项]
 | `--output` | `output/` | 输出目录 |
 | `--format` | `md,txt` | 输出格式，逗号分隔 |
 | `--fps` | `1.0` | 采样帧率（帧/秒），越高越准但更慢 |
-| `--subtitle-region` | `bottom20` | 字幕区域预设 |
+| `--subtitle-region` | `bottom20` | 字幕垂直区域预设（见下表） |
+| `--subtitle-bbox` | — | 精确字幕矩形 `x1,y1,x2,y2`（0.0–1.0），优先于 `--subtitle-region` |
 | `--confidence` | `0.7` | OCR 置信度阈值（0.0–1.0） |
 | `--merge-threshold` | `0.85` | 去重合并相似度阈值 |
 | `--backend` | `paddleocr` | OCR 引擎：`paddleocr` 或 `easyocr` |
@@ -125,6 +126,12 @@ python main.py --input video.mp4 --fps 0.5 --subtitle-region bottom30
 
 # 高精度（高帧率 + 低置信度阈值）
 python main.py --input video.mp4 --fps 2.0 --confidence 0.5
+
+# 避开角落台标/水印：精确指定字幕矩形（水平10%-90%，垂直75%-100%）
+python main.py --input video.mp4 --subtitle-bbox "0.1,0.75,0.9,1.0"
+
+# 字幕在视频中央（如竖屏视频）
+python main.py --input video.mp4 --subtitle-bbox "0.05,0.85,0.95,1.0"
 
 # 指定 PaddleOCR 引擎（macOS）
 python main.py --input video.mp4 --backend paddleocr

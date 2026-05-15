@@ -65,6 +65,16 @@ def load_config(config_path: str = "config.yaml") -> dict:
     help="字幕区域预设（默认: bottom20）",
 )
 @click.option(
+    "--subtitle-bbox",
+    default=None,
+    type=str,
+    help=(
+        "自定义字幕矩形，格式: 'x1,y1,x2,y2'（0.0–1.0 相对坐标）\n"
+        "例: '0.1,0.75,0.9,1.0' = 水平10%-90%、垂直75%-100%（避开角落台标），"
+        "提供此参数时忽略 --subtitle-region"
+    ),
+)
+@click.option(
     "--confidence",
     default=None,
     type=float,
@@ -110,6 +120,7 @@ def main(
     output_format,
     fps,
     subtitle_region,
+    subtitle_bbox,
     confidence,
     merge_threshold,
     lang,
@@ -137,10 +148,10 @@ def main(
     # 2. CLI 参数覆盖配置文件（CLI 优先级更高）
     _fps          = fps             or ext_cfg.get("fps", 1.0)
     _region       = subtitle_region or ext_cfg.get("subtitle_region", "bottom20")
-    _scale        = ext_cfg.get("scale_factor", 2.0)
+    _scale        = ext_cfg.get("scale_factor", 1.5)
     _lang         = lang            or None  # None 让 OCREngine 按 backend 自动选择
     _use_gpu      = use_gpu         if use_gpu is not None else ocr_cfg.get("use_gpu", False)
-    _backend      = backend         or ocr_cfg.get("backend", "easyocr")
+    _backend      = backend         or ocr_cfg.get("backend", "paddleocr")
     _confidence   = confidence      or ocr_cfg.get("confidence_threshold", 0.7)
     _merge_thr    = merge_threshold or post_cfg.get("merge_threshold", 0.85)
     _min_len      = post_cfg.get("min_text_length", 1)
@@ -148,7 +159,21 @@ def main(
     _formats_raw  = output_format   or ",".join(out_cfg.get("format", ["md", "txt"]))
     _formats      = [f.strip() for f in _formats_raw.split(",")]
 
+    # 解析 subtitle_bbox
+    _bbox = None
+    if subtitle_bbox:
+        try:
+            parts = [float(v.strip()) for v in subtitle_bbox.split(",")]
+            if len(parts) != 4:
+                raise ValueError()
+            _bbox = tuple(parts)
+        except (ValueError, TypeError):
+            raise click.BadParameter(
+                f"subtitle-bbox 格式错误：'{subtitle_bbox}'。需要 'x1,y1,x2,y2'（0.0–1.0）"
+            )
+
     # 3. 打印运行参数
+    _region_display = f"custom({subtitle_bbox})" if _bbox else _region
     click.echo("")
     click.echo("🎬 日文视频硬字幕提取工具")
     click.echo("─" * 50)
@@ -156,7 +181,7 @@ def main(
     click.echo(f"  输出目录: {_output_dir}")
     click.echo(f"  输出格式: {', '.join(_formats)}")
     click.echo(f"  采样帧率: {_fps} 帧/秒")
-    click.echo(f"  字幕区域: {_region}")
+    click.echo(f"  字幕区域: {_region_display}")
     click.echo(f"  OCR 引擎: {_backend}")
     click.echo(f"  GPU 加速: {'是' if _use_gpu else '否'}")
     click.echo(f"  置信度阈値: {_confidence}")
@@ -172,7 +197,11 @@ def main(
 
     # ─── 初始化各模块 ──────────────────────────────────────────────────────────
     extractor    = FrameExtractor(video_path=input, fps=_fps)
-    preprocessor = ImagePreprocessor(subtitle_region=_region, scale_factor=_scale)
+    preprocessor = ImagePreprocessor(
+        subtitle_region=_region,
+        subtitle_bbox=_bbox,
+        scale_factor=_scale,
+    )
     ocr_engine   = OCREngine(
         backend=_backend,
         lang=_lang,
