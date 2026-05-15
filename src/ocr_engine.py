@@ -1,8 +1,14 @@
 """
 模块 3: OCR 识别引擎 (OCREngine)
 
-封装 PaddleOCR，对预处理后的字幕图像进行日文文字识别。
+封装 PaddleOCR v3，对预处理后的字幕图像进行日文文字识别。
 返回带时间戳、文本和置信度的识别结果。
+
+PaddleOCR v3 API 变化（与 v2 对比）：
+  - use_gpu=True  →  device='gpu' / device='cpu'
+  - use_angle_cls →  use_textline_orientation
+  - show_log      →  已移除
+  - ocr() 返回值  →  生成器，每个元素是 OCRResult 对象，需用 .boxes/.rec_texts/.rec_scores 访问
 """
 
 import numpy as np
@@ -21,12 +27,12 @@ class OCRResult:
 
 class OCREngine:
     """
-    PaddleOCR 日文识别引擎封装。
+    PaddleOCR v3 日文识别引擎封装。
 
     Args:
         lang: OCR 语言代码。日文使用 'japan'。
-        use_gpu: 是否使用 GPU 加速。
-        use_angle_cls: 是否启用方向分类（支持竖排文字）。
+        use_gpu: 是否使用 GPU 加速。v3 中对应 device='gpu'。
+        use_textline_orientation: 是否启用方向分类（支持竖排文字）。
         confidence_threshold: 置信度阈值，低于此值的结果将被丢弃。
     """
 
@@ -34,17 +40,17 @@ class OCREngine:
         self,
         lang: str = "japan",
         use_gpu: bool = False,
-        use_angle_cls: bool = True,
+        use_textline_orientation: bool = True,
         confidence_threshold: float = 0.7,
     ):
         self.lang = lang
-        self.use_gpu = use_gpu
-        self.use_angle_cls = use_angle_cls
+        self.device = "gpu" if use_gpu else "cpu"
+        self.use_textline_orientation = use_textline_orientation
         self.confidence_threshold = confidence_threshold
-        self._ocr = None  # 延迟初始化（避免导入时加载模型）
+        self._ocr = None  # 延迟初始化（首次调用时加载模型）
 
     def _get_ocr(self):
-        """延迟初始化 PaddleOCR（首次调用时加载模型）。"""
+        """延迟初始化 PaddleOCR（首次调用时下载并加载模型）。"""
         if self._ocr is None:
             try:
                 from paddleocr import PaddleOCR
@@ -52,11 +58,12 @@ class OCREngine:
                 raise ImportError(
                     "PaddleOCR 未安装。请运行: pip install paddleocr paddlepaddle"
                 )
+            # PaddleOCR v3 新 API
             self._ocr = PaddleOCR(
-                use_angle_cls=self.use_angle_cls,
                 lang=self.lang,
-                use_gpu=self.use_gpu,
-                show_log=False,
+                device=self.device,
+                use_textline_orientation=self.use_textline_orientation,
+                text_rec_score_thresh=self.confidence_threshold,
             )
         return self._ocr
 
@@ -77,32 +84,53 @@ class OCREngine:
         """
         ocr = self._get_ocr()
 
-        # 执行识别
-        results = ocr.ocr(image, cls=self.use_angle_cls)
+        # PaddleOCR v3: ocr() 返回生成器，每次 predict 一张图
+        # 结果是 OCRResult 对象，包含 .rec_texts, .rec_scores, .boxes 属性
+        results = list(ocr.ocr(image))
 
-        # 解析结果：results 格式为 [[[bbox, (text, confidence)], ...]]
-        if not results or results[0] is None:
+        if not results:
             return None
 
         lines = []
         confidences = []
 
-        for line in results[0]:
-            if line is None:
+        for result in results:
+            # result 是单张图的 OCRResult 对象
+            if result is None:
                 continue
-            # line 格式：[bbox_points, (text, confidence)]
-            text, confidence = line[1]
-            text = text.strip()
 
-            # 过滤低置信度和空文本
-            if confidence >= self.confidence_threshold and text:
-                lines.append(text)
-                confidences.append(confidence)
+            # v3 API: rec_texts / rec_scores
+            rec_texts = getattr(result, "rec_texts", None)
+            rec_scores = getattr(result, "rec_scores", None)
+
+            # 兼容旧式列表格式 [[bbox, (text, score)], ...]
+            if rec_texts is None:
+                # 尝试旧格式（如果有混合安装）
+                if isinstance(result, list):
+                    for line in result:
+                        if line is None:
+                            continue
+                        text, score = line[1]
+                        text = text.strip()
+                        if score >= self.confidence_threshold and text:
+                            lines.append(text)
+                            confidences.append(score)
+                continue
+
+            # 正常 v3 格式
+            if rec_texts is None or rec_scores is None:
+                continue
+
+            for text, score in zip(rec_texts, rec_scores):
+                text = str(text).strip() if text else ""
+                score = float(score) if score is not None else 0.0
+                if score >= self.confidence_threshold and text:
+                    lines.append(text)
+                    confidences.append(score)
 
         if not lines:
             return None
 
-        # 多行文本合并（按位置从上到下已排序）
         combined_text = " ".join(lines)
         avg_confidence = sum(confidences) / len(confidences)
 
