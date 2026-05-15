@@ -86,7 +86,8 @@ case "$1" in
   gpu-check)
     echo "Checking GPU availability inside Docker..."
     docker run --rm --gpus all \
-      "${IMAGE_NAME}" python -c "
+      --entrypoint python \
+      "${IMAGE_NAME}" -c "
 import torch
 print('PyTorch version:', torch.__version__)
 print('CUDA available:', torch.cuda.is_available())
