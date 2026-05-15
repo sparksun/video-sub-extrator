@@ -144,8 +144,9 @@ class OCREngine:
         )
 
     def _recognize_paddleocr(self, ocr, image: np.ndarray, timestamp_ms: int) -> Optional[OCRResult]:
-        """PaddleOCR v3 识别逻辑。"""
-        results = list(ocr.ocr(image))
+        """PaddleOCR v3 识别逻辑（使用 predict() API）。"""
+        # 使用 predict()，ocr() 在 v3 中已弃用
+        results = list(ocr.predict(image))
         if not results:
             return None
 
@@ -155,24 +156,13 @@ class OCREngine:
         for result in results:
             if result is None:
                 continue
-            rec_texts = getattr(result, "rec_texts", None)
-            rec_scores = getattr(result, "rec_scores", None)
 
-            if rec_texts is None:
-                # 兼容旧格式
-                if isinstance(result, list):
-                    for line in result:
-                        if line is None:
-                            continue
-                        text, score = line[1]
-                        text = text.strip()
-                        if score >= self.confidence_threshold and text:
-                            lines.append(text)
-                            confidences.append(score)
-                continue
+            # OCRResult 是字典子类，用 dict key 访问
+            rec_texts  = result.get("rec_texts",  []) or []
+            rec_scores = result.get("rec_scores", []) or []
 
             for text, score in zip(rec_texts, rec_scores):
-                text = str(text).strip() if text else ""
+                text  = str(text).strip() if text else ""
                 score = float(score) if score is not None else 0.0
                 if score >= self.confidence_threshold and text:
                     lines.append(text)
@@ -187,6 +177,7 @@ class OCREngine:
             confidence=sum(confidences) / len(confidences),
             raw_lines=lines,
         )
+
 
     def recognize_batch(self, frames: List[tuple]) -> List[OCRResult]:
         results = []
