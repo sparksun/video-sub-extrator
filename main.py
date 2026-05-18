@@ -90,7 +90,13 @@ def load_config(config_path: str = "config.yaml") -> dict:
     "--lang",
     default=None,
     type=str,
-    help="OCR 语言代码（默认: japan）",
+    help=(
+        "OCR 识别语言代码，支持逗号分隔多语言（EasyOCR 专属）。\n"
+        "EasyOCR: ja（日文）、ch_sim（简体中文）、ch_tra（繁体）、en（英文）。\n"
+        "PaddleOCR: japan（日文）、ch（简体中文）、chinese_cht（繁体）。\n"
+        "中日混合（EasyOCR）: 'ch_sim,ja,en'（不加引号）。"
+        "默认按 backend 自动选择。"
+    ),
 )
 @click.option(
     "--use-gpu/--no-gpu",
@@ -183,6 +189,7 @@ def main(
     click.echo(f"  采样帧率: {_fps} 帧/秒")
     click.echo(f"  字幕区域: {_region_display}")
     click.echo(f"  OCR 引擎: {_backend}")
+    click.echo(f"  OCR 语言: {_lang or ('ja' if _backend == 'easyocr' else 'japan')} (默认)" if _lang is None else f"  OCR 语言: {_lang}")
     click.echo(f"  GPU 加速: {'是' if _use_gpu else '否'}")
     click.echo(f"  置信度阈値: {_confidence}")
     click.echo("─" * 50)

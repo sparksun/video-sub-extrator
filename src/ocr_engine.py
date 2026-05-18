@@ -30,7 +30,10 @@ class OCREngine:
 
     Args:
         backend:    'easyocr' (推荐 DGX Spark) 或 'paddleocr' (推荐 macOS)
-        lang:       语言代码。easyocr 用 'ja'，paddleocr 用 'japan'
+        lang:       语言代码，支持逗号分隔多语言（EasyOCR 专属）。
+                    EasyOCR 常用值: 'ja'（日文）、'ch_sim'（简体中文）、'ch_tra'（繁体中文）、'en'
+                    PaddleOCR 常用值: 'japan'（日文）、'ch'（中文简体）、'chinese_cht'（繁体）
+                    中日混合示例（EasyOCR）: 'ch_sim,ja,en'
         use_gpu:    是否使用 GPU 加速
         confidence_threshold: 置信度过滤阈值
     """
@@ -50,11 +53,14 @@ class OCREngine:
         self.confidence_threshold = confidence_threshold
         self._engine = None
 
-        # 语言代码按后端规范自动映射
+        # 语言代码按后端规范自动映射；支持逗号分隔多语言（EasyOCR 多语言场景）
         if lang is None:
             self.lang = "ja" if self.backend == self.BACKEND_EASYOCR else "japan"
         else:
             self.lang = lang
+
+        # 解析为语言列表（EasyOCR 使用列表，PaddleOCR 仅取第一个）
+        self._lang_list: List[str] = [l.strip() for l in self.lang.split(",") if l.strip()]
 
     def _get_engine(self):
         """延迟初始化 OCR 引擎（首次调用时加载模型）。"""
@@ -77,8 +83,10 @@ class OCREngine:
         except ImportError:
             raise ImportError("EasyOCR 未安装。请运行: pip install easyocr")
 
-        # 日文识别必须同时加载 'en'，否则数字/标点识别率极低
-        langs = [self.lang, "en"] if self.lang != "en" else ["en"]
+        # 保证 'en' 始终在语言列表中（提升数字/标点识别率），避免重复添加
+        langs = self._lang_list[:]
+        if "en" not in langs:
+            langs.append("en")
         print(f"[OCR] Loading EasyOCR (langs={langs}, gpu={self.use_gpu})...")
         reader = easyocr.Reader(
             langs,
@@ -94,9 +102,11 @@ class OCREngine:
         except ImportError:
             raise ImportError("PaddleOCR 未安装。请运行: pip install paddleocr paddlepaddle")
 
-        print(f"[OCR] Loading PaddleOCR (lang={self.lang}, device={'gpu' if self.use_gpu else 'cpu'})...")
+        # PaddleOCR 不支持多语言列表，取第一个语言代码
+        paddle_lang = self._lang_list[0] if self._lang_list else self.lang
+        print(f"[OCR] Loading PaddleOCR (lang={paddle_lang}, device={'gpu' if self.use_gpu else 'cpu'})...")
         ocr = PaddleOCR(
-            lang=self.lang,
+            lang=paddle_lang,
             device="gpu" if self.use_gpu else "cpu",
             use_textline_orientation=True,
             text_rec_score_thresh=self.confidence_threshold,

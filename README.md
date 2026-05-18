@@ -83,6 +83,28 @@ bash docker-run.sh run-nas /mnt/nas/Videos/xxx.mp4 --subtitle-bbox "0.1,0.80,0.9
 bash docker-run.sh shell
 ```
 
+> **📂 输出目录说明**：`docker-run.sh` 默认将宿主机的 `$(pwd)/output/` 挂载为容器内的 `/app/output`，
+> 识别结果会自动保存到该目录。若要指定其他宿主机路径，可直接修改脚本顶部的 `OUTPUT_DIR` 变量，
+> 或临时覆盖（见下方「指定输出字幕目录」示例）。
+
+#### 指定输出字幕目录示例
+
+```bash
+# 方式一：脚本内临时覆盖 OUTPUT_DIR（推荐，不修改脚本）
+OUTPUT_DIR="/Volumes/NAS/subtitles/anime_A" bash docker-run.sh run-nas /mnt/nas/Videos/anime_A.mp4
+
+# 方式二：NAS 视频 → 将字幕写到 NAS 的指定子目录
+OUTPUT_DIR="/mnt/nas/subtitles/2025" bash docker-run.sh run-nas /mnt/nas/Videos/episode01.mp4
+
+# 方式三：本地视频 → 字幕输出到桌面指定文件夹
+OUTPUT_DIR="/Users/$(whoami)/Desktop/subs" bash docker-run.sh run /Users/$(whoami)/Movies/ep01.mp4
+
+# 方式四：开发模式 + 自定义输出目录
+OUTPUT_DIR="/tmp/test_output" bash docker-run.sh dev /path/to/video.mp4 --fps 0.5
+```
+
+> ⚠️ 请确保目标目录已存在，或脚本可写权限。`docker-run.sh` 会自动执行 `mkdir -p "${OUTPUT_DIR}"`。
+
 ### 4. 开发模式（修改代码后无需重新 build）
 
 `dev` / `dev-nas` 命令会将宿主机的 `src/`、`main.py`、`config.yaml` 实时挂载进容器，代码改动即时生效：
@@ -99,6 +121,39 @@ bash docker-run.sh dev-nas /mnt/nas/Videos/xxx.mp4 --subtitle-region bottom30
 |------|----------|----------|
 | `run` / `run-nas` | 镜像内（baked-in） | 生产/稳定部署 |
 | `dev` / `dev-nas` | 宿主机实时挂载 | 开发调试，改完代码直接跑 |
+
+### 5. `run` vs `run-nas`：挂载机制详解
+
+两个命令在功能上等价（均使用镜像内代码、GPU 推理），**核心区别在于容器如何访问视频文件**：
+
+| 对比项 | `run <video_path>` | `run-nas <video_path>` |
+|--------|-------------------|------------------------|
+| **挂载对象** | 视频文件所在目录 → `/input/` | `/mnt/nas` 整目录 → `/mnt/nas/` |
+| **容器内路径** | `/input/<文件名>` | 与宿主机路径完全一致 |
+| **适用场景** | 视频在宿主机本地磁盘 | 视频在 NAS 网络存储，路径以 `/mnt/nas` 开头 |
+| **典型调用** | `bash docker-run.sh run /data/video.mp4` | `bash docker-run.sh run-nas /mnt/nas/Videos/ep01.mp4` |
+
+**底层 docker 命令等价展开：**
+
+```bash
+# run /data/video.mp4  →  等价于：
+docker run --rm --gpus all \
+  -v /data:/input:ro \
+  -v $(pwd)/output:/app/output \
+  video-sub-extrator:gpu \
+  --input /input/video.mp4 --output /app/output --backend easyocr --use-gpu
+
+# run-nas /mnt/nas/Videos/ep01.mp4  →  等价于：
+docker run --rm --gpus all \
+  -v /mnt/nas:/mnt/nas:ro \
+  -v $(pwd)/output:/app/output \
+  video-sub-extrator:gpu \
+  --input /mnt/nas/Videos/ep01.mp4 --output /app/output --backend easyocr --use-gpu
+```
+
+> **💡 选用建议**：
+> - 视频在 **本地 SSD / USB 外接盘** → 用 `run`
+> - 视频在 **NAS（Synology、群晖等，已挂载到 `/mnt/nas`）** → 用 `run-nas`，容器内路径与宿主机完全一致，无需关心文件名拼接
 
 ---
 
@@ -122,9 +177,20 @@ python main.py --input <视频路径> [选项]
 | `--subtitle-bbox` | — | 精确字幕矩形 `x1,y1,x2,y2`（0.0–1.0），优先于 `--subtitle-region` |
 | `--confidence` | `0.7` | OCR 置信度阈值（0.0–1.0） |
 | `--merge-threshold` | `0.85` | 去重合并相似度阈值 |
+| `--lang` | 自动 | OCR 语言代码（见下方「语言选项」） |
 | `--backend` | `paddleocr` | OCR 引擎：`paddleocr` 或 `easyocr` |
 | `--use-gpu` | 否 | 启用 GPU 加速 |
 | `--no-timestamp` | — | 输出文件中不含时间戳 |
+
+### 语言选项
+
+| 语言 | EasyOCR `--lang` | PaddleOCR `--lang` |
+|------|-----------------|--------------------|
+| 日文（默认） | `ja` | `japan` |
+| 简体中文 | `ch_sim` | `ch` |
+| 繁体中文 | `ch_tra` | `chinese_cht` |
+| 英文 | `en` | `en` |
+| 中日混合 | `ch_sim,ja,en` | 不支持（仅取第一个） |
 
 ### 字幕区域预设
 
@@ -158,6 +224,29 @@ python main.py --input video.mp4 --backend paddleocr
 
 # 指定 EasyOCR + GPU（DGX Spark 直接运行）
 python main.py --input video.mp4 --backend easyocr --use-gpu
+
+# 简体中文字幕（EasyOCR）
+python main.py --input video.mp4 --lang ch_sim --backend easyocr
+
+# 简体中文字幕（PaddleOCR / macOS）
+python main.py --input video.mp4 --lang ch --backend paddleocr
+
+# 中日混合字幕（EasyOCR，同时加载中文+日文+英文模型）
+python main.py --input video.mp4 --lang ch_sim,ja,en --backend easyocr --use-gpu
+
+# 指定输出字幕目录（将结果保存到指定路径而非默认的 output/）
+python main.py --input video.mp4 --output /path/to/my_subtitles/
+
+# 指定输出目录 + 格式（只输出 TXT，不生成 Markdown）
+python main.py --input video.mp4 --output ~/Desktop/subs --format txt
+
+# 完整示例：批量参数组合
+python main.py --input /Volumes/NAS/Videos/ep01.mp4 \
+               --output /Volumes/NAS/Subtitles/ep01 \
+               --fps 1.5 \
+               --subtitle-bbox "0.05,0.80,0.95,1.0" \
+               --backend paddleocr \
+               --format md,txt
 ```
 
 ---
